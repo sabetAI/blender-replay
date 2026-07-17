@@ -1,0 +1,28 @@
+schema_version = "1.0.0"
+
+id = "blender_replay"
+version = "0.2.0"
+name = "Blender Replay"
+tagline = "Record actions with deterministic state replay"
+maintainer = "sabetAI"
+type = "add-on"
+
+tags = ["System", "Modeling"]
+blender_version_min = "4.2.0"
+license = ["SPDX:GPL-3.0-or-later"]
+
+[permissions]
+files = "Import and export Blender Replay recording files"
+
+[build]
+paths_exclude_pattern = [
+  "__pycache__/",
+  ".*",
+  "/*.zip",
+  "*.blend[1-9]",
+  "/dist/",
+  "/pyproject.toml",
+  "/scripts/",
+  "/tests/",
+  "/verification/",
+]

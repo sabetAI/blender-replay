@@ -1,0 +1,10 @@
+__pycache__/
+.pytest_cache/
+.ruff_cache/
+dist/
+*.zip
+*.blend
+*.blend1
+*.chronicle.json
+verification/**/*_descriptor.json
+verification/**/*.names

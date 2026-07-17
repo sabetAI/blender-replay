@@ -1,0 +1,21 @@
+{
+  "actions_requested": 65,
+  "blender_version": "5.1.2",
+  "operator_events_recorded": 65,
+  "original_object_count": 68,
+  "original_scene_digest": "f2ca36b9949632541af908a03fadaa207e5de93c06e860145524e407b9083cbb",
+  "pixel_comparison": {
+    "different_channel_fraction": 0.0,
+    "maximum_absolute_error": 0.0,
+    "mean_absolute_error": 0.0
+  },
+  "recording_events": 345,
+  "replay_object_count": 68,
+  "replay_result": {
+    "operators": 65,
+    "repairs": 0,
+    "warnings": []
+  },
+  "replay_scene_digest": "f2ca36b9949632541af908a03fadaa207e5de93c06e860145524e407b9083cbb",
+  "scene_structure_exact": true
+}
