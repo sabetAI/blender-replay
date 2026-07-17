@@ -80,6 +80,7 @@ jobs:
         if: matrix.platform == 'windows'
         shell: pwsh
         run: |
+          New-Item -ItemType Directory -Force dist | Out-Null
           & $env:BLENDER_BIN --command extension validate .
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           & $env:BLENDER_BIN --command extension build --source-dir . --output-dir dist
@@ -92,6 +93,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          mkdir -p dist
           "$BLENDER_BIN" --command extension validate .
           "$BLENDER_BIN" --command extension build --source-dir . --output-dir dist
           "$BLENDER_BIN" --background --factory-startup --python scripts/test_blender.py
