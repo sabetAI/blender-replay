@@ -1,15 +1,19 @@
 schema_version = "1.0.0"
 
 id = "blender_replay"
-version = "0.2.0"
+version = "0.2.1"
 name = "Blender Replay"
 tagline = "Record actions with deterministic state replay"
 maintainer = "sabetAI"
 type = "add-on"
+website = "https://github.com/sabetAI/blender-replay"
 
 tags = ["System", "Modeling"]
 blender_version_min = "4.2.0"
 license = ["SPDX:GPL-3.0-or-later"]
+
+# This extension is pure Python. Omitting `platforms` makes this package
+# available on every operating system supported by Blender.
 
 [permissions]
 files = "Import and export Blender Replay recording files"

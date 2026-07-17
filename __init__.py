@@ -12,7 +12,7 @@ from . import operators, runtime, ui
 bl_info = {
     "name": "Blender Replay",
     "author": "sabetAI",
-    "version": (0, 2, 0),
+    "version": (0, 2, 1),
     "blender": (4, 2, 0),
     "location": "3D Viewport > Sidebar > Replay",
     "description": "Record operators with selection and geometry checkpoints",

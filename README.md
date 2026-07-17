@@ -28,11 +28,21 @@ blender --command extension build \
   --output-dir /path/to/blender-replay/dist
 ```
 
-In Blender, open **Edit → Preferences → Get Extensions**, use the menu in the top-right, choose **Install from Disk**, and select `blender_replay-0.2.0.zip`.
+In Blender, open **Edit → Preferences → Get Extensions**, use the menu in the top-right, choose **Install from Disk**, and select `blender_replay-0.2.1.zip`.
 
 Open **3D Viewport → Sidebar (`N`) → Replay**.
 
 Prebuilt packages are available from [GitHub Releases](https://github.com/sabetAI/blender-replay/releases/latest).
+
+## Platform compatibility
+
+Blender Replay is a pure-Python extension with no native libraries or operating-system-specific paths. One universal package supports:
+
+- Windows x64 and ARM64 wherever Blender 4.2 or newer is available.
+- macOS on Apple Silicon, plus Intel Macs running a compatible Blender release.
+- Linux x64.
+
+Automated tests install and exercise the packaged extension on Windows x64, macOS Apple Silicon, and macOS Intel. The manifest deliberately omits a `platforms` restriction, which is Blender's standard way to mark an extension as available on every supported operating system.
 
 ## Use
 

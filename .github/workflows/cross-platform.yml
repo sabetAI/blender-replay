@@ -1,0 +1,119 @@
+name: Cross-platform Blender
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Windows x64 / Blender 5.2
+            os: windows-latest
+            platform: windows
+            blender_archive: blender-5.2.0-windows-x64.zip
+            blender_series: Blender5.2
+          - name: macOS ARM64 / Blender 5.2
+            os: macos-15
+            platform: macos
+            blender_archive: blender-5.2.0-macos-arm64.dmg
+            blender_series: Blender5.2
+          - name: macOS Intel / Blender 4.5 LTS
+            os: macos-15-intel
+            platform: macos
+            blender_archive: blender-4.5.11-macos-x64.dmg
+            blender_series: Blender4.5
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+
+      - name: Install lint dependency
+        run: python -m pip install ruff
+
+      - name: Run pure-Python checks
+        run: |
+          ruff check .
+          python -m unittest discover -s tests
+
+      - name: Download Blender on Windows
+        if: matrix.platform == 'windows'
+        shell: pwsh
+        run: |
+          $uri = "https://download.blender.org/release/${{ matrix.blender_series }}/${{ matrix.blender_archive }}"
+          $archive = Join-Path $env:RUNNER_TEMP "blender.zip"
+          $directory = Join-Path $env:RUNNER_TEMP "blender"
+          Invoke-WebRequest -Uri $uri -OutFile $archive
+          Expand-Archive -Path $archive -DestinationPath $directory
+          $binary = Get-ChildItem $directory -Recurse -Filter blender.exe | Select-Object -First 1
+          if (-not $binary) { throw "Blender executable was not found" }
+          "BLENDER_BIN=$($binary.FullName)" >> $env:GITHUB_ENV
+
+      - name: Download Blender on macOS
+        if: matrix.platform == 'macos'
+        shell: bash
+        run: |
+          set -euo pipefail
+          uri="https://download.blender.org/release/${{ matrix.blender_series }}/${{ matrix.blender_archive }}"
+          image="$RUNNER_TEMP/blender.dmg"
+          volume="$RUNNER_TEMP/blender-volume"
+          curl --fail --location --retry 3 --output "$image" "$uri"
+          mkdir -p "$volume"
+          hdiutil attach "$image" -nobrowse -readonly -mountpoint "$volume"
+          cp -R "$volume/Blender.app" "$RUNNER_TEMP/Blender.app"
+          hdiutil detach "$volume"
+          echo "BLENDER_BIN=$RUNNER_TEMP/Blender.app/Contents/MacOS/Blender" >> "$GITHUB_ENV"
+
+      - name: Validate, build, and test on Windows
+        if: matrix.platform == 'windows'
+        shell: pwsh
+        run: |
+          & $env:BLENDER_BIN --command extension validate .
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          & $env:BLENDER_BIN --command extension build --source-dir . --output-dir dist
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          & $env:BLENDER_BIN --background --factory-startup --python scripts/test_blender.py
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Validate, build, and test on macOS
+        if: matrix.platform == 'macos'
+        shell: bash
+        run: |
+          set -euo pipefail
+          "$BLENDER_BIN" --command extension validate .
+          "$BLENDER_BIN" --command extension build --source-dir . --output-dir dist
+          "$BLENDER_BIN" --background --factory-startup --python scripts/test_blender.py
+
+      - name: Install and smoke-test package on Windows
+        if: matrix.platform == 'windows'
+        shell: pwsh
+        run: |
+          $resources = Join-Path $env:RUNNER_TEMP "blender-user"
+          $env:BLENDER_USER_RESOURCES = $resources
+          $package = (Get-ChildItem dist -Filter "blender_replay-*.zip" | Select-Object -First 1).FullName
+          & $env:BLENDER_BIN --command extension install-file -r user_default -e $package
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          & $env:BLENDER_BIN --background --python scripts/test_installed_extension.py
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Install and smoke-test package on macOS
+        if: matrix.platform == 'macos'
+        shell: bash
+        run: |
+          set -euo pipefail
+          export BLENDER_USER_RESOURCES="$RUNNER_TEMP/blender-user"
+          package=$(find dist -name 'blender_replay-*.zip' -print -quit)
+          "$BLENDER_BIN" --command extension install-file -r user_default -e "$package"
+          "$BLENDER_BIN" --background --python scripts/test_installed_extension.py
