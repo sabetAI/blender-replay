@@ -30,9 +30,11 @@ PENDING_STATE_GRACE = 1.0
 OWN_OPERATOR_PREFIX = "CHRONICLE_OT_"
 
 _active = False
+_paused = False
 _capture_guard = False
 _session: dict[str, Any] | None = None
 _started_at = 0.0
+_time_offset = 0.0
 _last_saved_at = 0.0
 _dirty = False
 _seen_operators: dict[int, str] = {}
@@ -51,6 +53,17 @@ _pending_state_changed_at = 0.0
 
 def is_recording() -> bool:
     return _active
+
+
+def is_paused(context: bpy.types.Context | None = None) -> bool:
+    if _active:
+        return _paused
+    session = get_session(context) if context is not None else _session
+    return bool(session and session.get("recording_state") == "paused")
+
+
+def can_resume(context: bpy.types.Context) -> bool:
+    return is_paused(context)
 
 
 def get_session(context: bpy.types.Context | None = None) -> dict[str, Any] | None:
@@ -76,7 +89,7 @@ def commit_pending_state() -> None:
 
 
 def _relative_time() -> float:
-    return round(max(0.0, time.monotonic() - _started_at), 4)
+    return round(_time_offset + max(0.0, time.monotonic() - _started_at), 4)
 
 
 def _mark_dirty() -> None:
@@ -120,6 +133,73 @@ def _warn(message: str) -> None:
         return
     _session["warnings"].append(message)
     _mark_dirty()
+
+
+def _start_segment(reason: str) -> None:
+    if _session is None:
+        return
+    segments = _session.setdefault("segments", [])
+    index = len(segments) + 1
+    marker_index = _append_event(
+        {
+            "type": "segment",
+            "phase": "start",
+            "segment": index,
+            "reason": reason,
+        }
+    )
+    segments.append(
+        {
+            "index": index,
+            "started_at": _relative_time(),
+            "start_event": marker_index + 1,
+        }
+    )
+    _mark_dirty()
+
+
+def _end_segment(reason: str) -> None:
+    if _session is None:
+        return
+    segments = _session.setdefault("segments", [])
+    if not segments or "ended_at" in segments[-1]:
+        return
+    index = segments[-1]["index"]
+    marker_index = _append_event(
+        {
+            "type": "segment",
+            "phase": "end",
+            "segment": index,
+            "reason": reason,
+        }
+    )
+    segments[-1].update(
+        {
+            "ended_at": _relative_time(),
+            "end_event": marker_index - 1,
+            "end_reason": reason,
+        }
+    )
+    _mark_dirty()
+
+
+def _recorded_object_names(session: dict[str, Any]) -> set[str]:
+    names: set[str] = set()
+    for event in session.get("events", []):
+        if event.get("type") != "checkpoint":
+            continue
+        if event.get("baseline") and "scene_objects" in event:
+            names = set(event["scene_objects"])
+        names.difference_update(event.get("deleted_objects", []))
+        names.update(state["name"] for state in event.get("objects", []))
+    return names
+
+
+def _last_recorded_time(session: dict[str, Any]) -> float:
+    return max(
+        (float(event.get("time", 0.0)) for event in session.get("events", [])),
+        default=0.0,
+    )
 
 
 def _operator_pointer(operator: bpy.types.Operator) -> int:
@@ -183,6 +263,7 @@ def _capture_checkpoint(
     context: bpy.types.Context,
     *,
     baseline: bool = False,
+    full: bool = False,
     reason: str = "change",
     pending: bool = False,
 ) -> None:
@@ -199,6 +280,7 @@ def _capture_checkpoint(
         signature = object_state_signature(state)
         if (
             baseline
+            or full
             or obj.name not in _object_signatures
             or _object_signatures[obj.name] != signature
         ):
@@ -219,6 +301,7 @@ def _capture_checkpoint(
         signature = material_state_signature(state)
         if (
             baseline
+            or full
             or material.name not in _material_signatures
             or _material_signatures[material.name] != signature
         ):
@@ -227,15 +310,15 @@ def _capture_checkpoint(
 
     world_state = capture_world_state(context.scene.world)
     world_signature = material_state_signature(world_state) if world_state else ""
-    changed_world = baseline or world_signature != _world_signature
+    changed_world = baseline or full or world_signature != _world_signature
     _world_signature = world_signature
     scene_state = capture_scene_state(context.scene)
     scene_signature = material_state_signature(scene_state)
-    changed_scene = baseline or scene_signature != _scene_signature
+    changed_scene = baseline or full or scene_signature != _scene_signature
     _scene_signature = scene_signature
 
     mesh_names = set(_updated_mesh_names)
-    if baseline:
+    if baseline or full:
         mesh_names.update(obj.data.name for obj in context.scene.objects if obj.type == "MESH")
     active = context.view_layer.objects.active
     if active and active.type == "MESH" and active.mode == "EDIT":
@@ -259,6 +342,7 @@ def _capture_checkpoint(
 
     if (
         baseline
+        or full
         or object_states
         or material_states
         or mesh_states
@@ -270,6 +354,7 @@ def _capture_checkpoint(
             "type": "checkpoint",
             "reason": reason,
             "baseline": baseline,
+            "segment_baseline": full,
             "objects": object_states,
             "materials": material_states,
             "meshes": mesh_states,
@@ -288,7 +373,7 @@ def _capture_checkpoint(
 
 def poll(context: bpy.types.Context | None = None) -> None:
     global _capture_guard, _last_saved_at, _pending_state_start
-    if not _active or _capture_guard:
+    if not _active or _paused or _capture_guard:
         return
     context = context or bpy.context
     if context.window_manager is None or context.scene is None:
@@ -359,10 +444,11 @@ def poll(context: bpy.types.Context | None = None) -> None:
 def _timer() -> float | None:
     if not _active:
         return None
-    try:
-        poll(bpy.context)
-    except Exception as exc:  # Keep the recorder alive and expose the failure in its session.
-        _warn(f"Recorder polling error: {type(exc).__name__}: {exc}")
+    if not _paused:
+        try:
+            poll(bpy.context)
+        except Exception as exc:  # Keep the recorder alive and expose the failure.
+            _warn(f"Recorder polling error: {type(exc).__name__}: {exc}")
     return POLL_INTERVAL
 
 
@@ -372,10 +458,10 @@ def _ensure_timer() -> None:
 
 
 def start(context: bpy.types.Context) -> dict[str, Any]:
-    global _active, _session, _started_at, _last_saved_at
+    global _active, _paused, _session, _started_at, _time_offset, _last_saved_at
     global _last_context_signature, _dirty, _pending_state_start
-    if _active:
-        raise RuntimeError("Blender Replay is already recording")
+    if _active or can_resume(context):
+        raise RuntimeError("Finish or discard the paused recording before starting a new one")
     settings = context.scene.chronicle_settings
     _session = new_session(
         settings.recording_name,
@@ -384,6 +470,7 @@ def start(context: bpy.types.Context) -> dict[str, Any]:
         settings.max_checkpoint_vertices,
     )
     _started_at = time.monotonic()
+    _time_offset = 0.0
     _last_saved_at = 0.0
     _last_context_signature = ""
     _seen_operators.clear()
@@ -395,8 +482,65 @@ def start(context: bpy.types.Context) -> dict[str, Any]:
         _seen_operators[_operator_pointer(operator)] = operator_fingerprint(operator)
     _refresh_object_cache(context)
     _active = True
+    _paused = False
     context.window_manager.chronicle_is_recording = True
+    context.window_manager.chronicle_is_paused = False
+    _start_segment("recording_start")
     _capture_checkpoint(context, baseline=True, reason="recording_start")
+    _capture_context_event(context, force=True)
+    _dirty = True
+    save(context)
+    _ensure_timer()
+    return _session
+
+
+def pause(context: bpy.types.Context) -> dict[str, Any]:
+    global _paused, _time_offset
+    if not _active or _paused or _session is None:
+        raise RuntimeError("Blender Replay is not actively capturing")
+    poll(context)
+    commit_pending_state()
+    _end_segment("pause")
+    _time_offset = _relative_time()
+    _paused = True
+    _session["recording_state"] = "paused"
+    context.window_manager.chronicle_is_paused = True
+    _mark_dirty()
+    save(context)
+    return _session
+
+
+def resume(context: bpy.types.Context) -> dict[str, Any]:
+    global _active, _paused, _session, _started_at, _time_offset
+    global _last_context_signature, _dirty, _pending_state_start
+    global _known_objects, _world_signature, _scene_signature
+
+    session = get_session(context)
+    if session is None or session.get("recording_state") != "paused":
+        raise RuntimeError("No paused Blender Replay recording is available")
+    _session = session
+    _active = True
+    _paused = False
+    _started_at = time.monotonic()
+    _time_offset = _last_recorded_time(session)
+    _last_context_signature = ""
+    _pending_state_start = None
+    _known_objects = _recorded_object_names(session)
+    _object_signatures.clear()
+    _material_signatures.clear()
+    _world_signature = ""
+    _scene_signature = ""
+    _seen_operators.clear()
+    _operator_event_indices.clear()
+    _updated_mesh_names.clear()
+    _warned_meshes.clear()
+    for operator in context.window_manager.operators:
+        _seen_operators[_operator_pointer(operator)] = operator_fingerprint(operator)
+    context.window_manager.chronicle_is_recording = True
+    context.window_manager.chronicle_is_paused = False
+    _session["recording_state"] = "recording"
+    _start_segment("recording_resume")
+    _capture_checkpoint(context, full=True, reason="recording_resume")
     _capture_context_event(context, force=True)
     _dirty = True
     save(context)
@@ -414,13 +558,22 @@ def save(context: bpy.types.Context) -> None:
 
 
 def stop(context: bpy.types.Context) -> dict[str, Any] | None:
-    global _active
+    global _active, _paused, _session
     if not _active:
-        return _session
-    poll(context)
+        session = get_session(context)
+        if session is None or session.get("recording_state") != "paused":
+            return session
+        _session = session
+    elif not _paused:
+        poll(context)
+        commit_pending_state()
+        _end_segment("stop")
     _active = False
+    _paused = False
     context.window_manager.chronicle_is_recording = False
+    context.window_manager.chronicle_is_paused = False
     if _session is not None:
+        _session["recording_state"] = "stopped"
         _session["stopped_at"] = time.time()
         _mark_dirty()
     save(context)
@@ -428,9 +581,11 @@ def stop(context: bpy.types.Context) -> dict[str, Any] | None:
 
 
 def discard(context: bpy.types.Context) -> None:
-    global _active, _session, _dirty
+    global _active, _paused, _session, _dirty
     _active = False
+    _paused = False
     context.window_manager.chronicle_is_recording = False
+    context.window_manager.chronicle_is_paused = False
     text = bpy.data.texts.get(context.scene.chronicle_session_text)
     if text is not None:
         bpy.data.texts.remove(text)
@@ -441,7 +596,7 @@ def discard(context: bpy.types.Context) -> None:
 
 @persistent
 def depsgraph_update_handler(scene, depsgraph) -> None:
-    if not _active or _capture_guard:
+    if not _active or _paused or _capture_guard:
         return
     for update in depsgraph.updates:
         updated_id = getattr(update.id, "original", update.id)
@@ -453,11 +608,16 @@ def depsgraph_update_handler(scene, depsgraph) -> None:
 
 @persistent
 def load_pre_handler(_filepath) -> None:
-    global _active, _session, _dirty, _pending_state_start
+    global _active, _paused, _session, _dirty, _pending_state_start
     _active = False
+    _paused = False
     _session = None
     _dirty = False
     _pending_state_start = None
+    window_manager = getattr(bpy.context, "window_manager", None)
+    if window_manager is not None:
+        window_manager.chronicle_is_recording = False
+        window_manager.chronicle_is_paused = False
 
 
 def register() -> None:
@@ -468,8 +628,9 @@ def register() -> None:
 
 
 def unregister() -> None:
-    global _active
+    global _active, _paused
     _active = False
+    _paused = False
     if bpy.app.timers.is_registered(_timer):
         bpy.app.timers.unregister(_timer)
     if depsgraph_update_handler in bpy.app.handlers.depsgraph_update_post:

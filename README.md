@@ -48,11 +48,13 @@ Automated tests install and exercise the packaged extension on Windows x64, macO
 
 1. Set a recording name and press **Start Recording**.
 2. Model normally. Use **Capture State Now** after an operation from an unusual add-on if you want an explicit checkpoint.
-3. Press **Stop**.
-4. Use **Restore Baseline + Replay** for the most deterministic replay. This removes objects created after recording started, so Blender Replay asks for confirmation.
-5. Use **Replay Here** when the recording is meant to operate on the current selection instead.
+3. Press **Pause** to end the current capture segment. Commands performed while paused are not recorded individually.
+4. Press **Resume** to start another segment. Blender Replay stores a full bridge checkpoint so replay reaches the current scene state before continuing. Paused recordings are saved in the blend file and can be resumed after reopening it.
+5. Press **Stop** when all segments are complete.
+6. Use **Restore Baseline + Replay** for the most deterministic replay. This removes objects created after recording started, so Blender Replay asks for confirmation.
+7. Use **Replay Here** when the recording is meant to operate on the current selection instead.
 
-Recordings are saved as hidden Blender text data-blocks and can be exported as human-readable `.chronicle.json` files. Import never evaluates Python source. File-opening, factory-reset, quit, and arbitrary Python-file operators are blocked during replay.
+Recordings are saved as hidden Blender text data-blocks and can be exported as human-readable `.chronicle.json` files. Each recording can contain any number of pause-delimited capture segments. Import never evaluates Python source. File-opening, factory-reset, quit, and arbitrary Python-file operators are blocked during replay.
 
 ## Verified replay demo
 

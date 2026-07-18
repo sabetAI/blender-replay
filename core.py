@@ -10,7 +10,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 SCHEMA_VERSION = 1
-RECORDER_VERSION = "0.1.0"
+RECORDER_VERSION = "0.2.0"
 
 
 def new_session(
@@ -30,6 +30,8 @@ def new_session(
         "settings": {
             "max_checkpoint_vertices": max_checkpoint_vertices,
         },
+        "recording_state": "recording",
+        "segments": [],
         "events": [],
         "warnings": [],
     }
@@ -48,6 +50,11 @@ def validate_session(value: Any) -> dict[str, Any]:
         raise ValueError("The recording must contain an events list")
     if not isinstance(value.get("warnings", []), list):
         raise ValueError("The recording warnings must be a list")
+    if not isinstance(value.get("segments", []), list):
+        raise ValueError("The recording segments must be a list")
+    state = value.get("recording_state")
+    if state is not None and state not in {"recording", "paused", "stopped"}:
+        raise ValueError(f"Unsupported recording state {state!r}")
     return value
 
 

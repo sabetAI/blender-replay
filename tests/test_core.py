@@ -23,11 +23,21 @@ class CoreTests(unittest.TestCase):
     def test_session_is_json_safe_and_valid(self):
         session = new_session(" Demo ", "5.2.0", "Scene", 250_000)
         self.assertEqual(session["name"], "Demo")
+        self.assertEqual(session["recording_state"], "recording")
+        self.assertEqual(session["segments"], [])
         self.assertEqual(validate_session(json.loads(json.dumps(session))), session)
 
     def test_validate_session_rejects_future_schema(self):
         with self.assertRaisesRegex(ValueError, "Unsupported schema"):
             validate_session({"schema_version": 99, "events": []})
+
+    def test_validate_session_rejects_invalid_segments_and_state(self):
+        with self.assertRaisesRegex(ValueError, "segments"):
+            validate_session({"schema_version": 1, "events": [], "segments": {}})
+        with self.assertRaisesRegex(ValueError, "state"):
+            validate_session(
+                {"schema_version": 1, "events": [], "recording_state": "unknown"}
+            )
 
     def test_digest_is_stable_across_dict_order(self):
         first = {"b": [2, 3], "a": 1}

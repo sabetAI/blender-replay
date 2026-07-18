@@ -1,7 +1,7 @@
 schema_version = "1.0.0"
 
 id = "blender_replay"
-version = "0.2.1"
+version = "0.3.0"
 name = "Blender Replay"
 tagline = "Record actions with deterministic state replay"
 maintainer = "sabetAI"

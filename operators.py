@@ -19,7 +19,11 @@ class CHRONICLE_OT_start(Operator):
 
     @classmethod
     def poll(cls, context):
-        return not runtime.is_recording() and context.scene is not None
+        return (
+            not runtime.is_recording()
+            and not runtime.can_resume(context)
+            and context.scene is not None
+        )
 
     def execute(self, context):
         try:
@@ -38,12 +42,50 @@ class CHRONICLE_OT_stop(Operator):
 
     @classmethod
     def poll(cls, context):
-        return runtime.is_recording()
+        return runtime.is_recording() or runtime.can_resume(context)
 
     def execute(self, context):
         session = runtime.stop(context)
         count = len(session["events"]) if session else 0
         self.report({"INFO"}, f"Blender Replay saved {count} events")
+        return {"FINISHED"}
+
+
+class CHRONICLE_OT_pause(Operator):
+    bl_idname = "chronicle.pause"
+    bl_label = "Pause Recording"
+    bl_description = "End this capture segment and ignore commands until recording resumes"
+
+    @classmethod
+    def poll(cls, context):
+        return runtime.is_recording() and not runtime.is_paused(context)
+
+    def execute(self, context):
+        try:
+            runtime.pause(context)
+        except RuntimeError as exc:
+            self.report({"ERROR"}, str(exc))
+            return {"CANCELLED"}
+        self.report({"INFO"}, "Blender Replay recording paused")
+        return {"FINISHED"}
+
+
+class CHRONICLE_OT_resume(Operator):
+    bl_idname = "chronicle.resume"
+    bl_label = "Resume Recording"
+    bl_description = "Start a new capture segment from the current scene state"
+
+    @classmethod
+    def poll(cls, context):
+        return runtime.can_resume(context)
+
+    def execute(self, context):
+        try:
+            session = runtime.resume(context)
+        except RuntimeError as exc:
+            self.report({"ERROR"}, str(exc))
+            return {"CANCELLED"}
+        self.report({"INFO"}, f"Recording segment {len(session['segments'])} started")
         return {"FINISHED"}
 
 
@@ -54,7 +96,7 @@ class CHRONICLE_OT_checkpoint(Operator):
 
     @classmethod
     def poll(cls, context):
-        return runtime.is_recording()
+        return runtime.is_recording() and not runtime.is_paused(context)
 
     def execute(self, context):
         runtime.poll(context)
@@ -76,7 +118,11 @@ class CHRONICLE_OT_play(Operator):
 
     @classmethod
     def poll(cls, context):
-        return not runtime.is_recording() and runtime.get_session(context) is not None
+        return (
+            not runtime.is_recording()
+            and not runtime.can_resume(context)
+            and runtime.get_session(context) is not None
+        )
 
     def invoke(self, context, event):
         if self.restore_baseline:
@@ -178,6 +224,8 @@ class CHRONICLE_OT_import(Operator, ImportHelper):
 CLASSES = (
     CHRONICLE_OT_start,
     CHRONICLE_OT_stop,
+    CHRONICLE_OT_pause,
+    CHRONICLE_OT_resume,
     CHRONICLE_OT_checkpoint,
     CHRONICLE_OT_play,
     CHRONICLE_OT_discard,

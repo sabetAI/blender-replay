@@ -97,8 +97,39 @@ try:
     cube.location.x = 3.0
     bpy.context.view_layer.update()
     runtime.poll(bpy.context)
+    paused_session = runtime.pause(bpy.context)
+    paused_event_count = len(paused_session["events"])
+    assert runtime.is_paused(bpy.context)
+
+    bpy.ops.mesh.primitive_uv_sphere_add(location=(4.0, 0.0, 0.0))
+    paused_bridge = bpy.context.active_object
+    paused_bridge.name = "Paused Segment Bridge"
+    cube.location.x = 7.0
+    bpy.context.view_layer.update()
+    runtime.poll(bpy.context)
+    assert len(paused_session["events"]) == paused_event_count
+
+    # A saved paused recording can resume after Blender reloads the runtime state.
+    runtime.load_pre_handler("")
+    assert not runtime.is_recording()
+    assert runtime.can_resume(bpy.context)
+    resumed_session = runtime.resume(bpy.context)
+    assert runtime.is_recording()
+    assert not runtime.is_paused(bpy.context)
+    assert len(resumed_session["segments"]) == 2
+
+    cube.location.x = 9.0
+    bpy.context.view_layer.update()
+    runtime.poll(bpy.context)
     session = runtime.stop(bpy.context)
     assert any(event["type"] == "checkpoint" for event in session["events"])
+    assert session["recording_state"] == "stopped"
+    assert len(session["segments"]) == 2
+    assert all("ended_at" in segment for segment in session["segments"])
+    operator_ids = {
+        event["idname"] for event in session["events"] if event.get("type") == "operator"
+    }
+    assert "MESH_OT_primitive_uv_sphere_add" not in operator_ids
     assert storage.read_session(bpy.context)["name"] == "Blender smoke test"
 
     cube.data.materials.clear()
@@ -110,7 +141,8 @@ try:
         restore_baseline=True,
         use_checkpoints=True,
     )
-    assert abs(bpy.data.objects["Recorded Cube"].location.x - 3.0) < 1e-6
+    assert abs(bpy.data.objects["Recorded Cube"].location.x - 9.0) < 1e-6
+    assert bpy.data.objects.get("Paused Segment Bridge") is not None
     assert bpy.data.materials.get("Recorded Material") is not None
     assert bpy.data.objects["Recorded Cube"].data.materials[0].name == "Recorded Material"
     assert bpy.context.scene.camera.name == "Recorded Camera"
@@ -118,6 +150,7 @@ try:
     assert bpy.data.objects["Recorded Light"].data.energy == 800.0
     assert bpy.context.scene.render.resolution_x == 640
     assert result["warnings"] == []
+    assert result["segments"] == 2
 
     with tempfile.TemporaryDirectory() as directory:
         path = str(Path(directory) / "smoke.chronicle.json")

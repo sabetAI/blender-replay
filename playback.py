@@ -125,7 +125,13 @@ def play(
     use_checkpoints: bool,
 ) -> dict[str, Any]:
     validate_session(session)
-    result = {"operators": 0, "repairs": 0, "warnings": []}
+    segment_count = len(session.get("segments", []))
+    result = {
+        "operators": 0,
+        "repairs": 0,
+        "segments": segment_count or (1 if session.get("events") else 0),
+        "warnings": [],
+    }
 
     events = session["events"]
     baseline_index = next(

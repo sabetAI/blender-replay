@@ -12,7 +12,7 @@ from . import operators, runtime, ui
 bl_info = {
     "name": "Blender Replay",
     "author": "sabetAI",
-    "version": (0, 2, 1),
+    "version": (0, 3, 0),
     "blender": (4, 2, 0),
     "location": "3D Viewport > Sidebar > Replay",
     "description": "Record operators with selection and geometry checkpoints",
@@ -61,11 +61,16 @@ def register():
         default=False,
         options={"HIDDEN", "SKIP_SAVE"},
     )
+    bpy.types.WindowManager.chronicle_is_paused = BoolProperty(
+        default=False,
+        options={"HIDDEN", "SKIP_SAVE"},
+    )
     runtime.register()
 
 
 def unregister():
     runtime.unregister()
+    del bpy.types.WindowManager.chronicle_is_paused
     del bpy.types.WindowManager.chronicle_is_recording
     del bpy.types.Scene.chronicle_session_text
     del bpy.types.Scene.chronicle_settings

@@ -9,11 +9,12 @@
     "maximum_absolute_error": 0.0,
     "mean_absolute_error": 0.0
   },
-  "recording_events": 345,
+  "recording_events": 348,
   "replay_object_count": 68,
   "replay_result": {
     "operators": 65,
     "repairs": 0,
+    "segments": 1,
     "warnings": []
   },
   "replay_scene_digest": "f2ca36b9949632541af908a03fadaa207e5de93c06e860145524e407b9083cbb",
